@@ -184,6 +184,20 @@ UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
+local function IsVisible(part, character)
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    rayParams.FilterDescendantsInstances = {Player.Character, Camera}
+    local origin = Camera.CFrame.Position
+    local direction = (part.Position - origin).Unit * (part.Position - origin).Magnitude
+    local result = workspace:Raycast(origin, direction, rayParams)
+    
+    if result then
+        return result.Instance:IsDescendantOf(character)
+    end
+    return true
+end
+
 local function GetClosestTarget()
     local target, shortestDist = nil, math.huge
     local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
@@ -192,7 +206,7 @@ local function GetClosestTarget()
         if p ~= Player and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
             if not Settings.TeamCheck or (p.Team ~= Player.Team) then
                 local part = p.Character:FindFirstChild(Settings.AimPart) or p.Character:FindFirstChild("HumanoidRootPart")
-                if part then
+                if part and IsVisible(part, p.Character) then
                     local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
                     if onScreen and screenPoint.Z > 0 then
                         local dist = (Vector2.new(screenPoint.X, screenPoint.Y) - center).Magnitude
@@ -231,7 +245,7 @@ end)
 local Rayfield = loadstring(game:HttpGet("https://raw.githubusercontent.com/linhmcfake/LuaLibrary/refs/heads/main/RayField.lua"))()
 Rayfield.Notify = function() end
 
-local Window = Rayfield:CreateWindow({Name = "Pistol Arena Rage v13", ConfigurationSaving = {Enabled = false}})
+local Window = Rayfield:CreateWindow({Name = "Pistol Arena Rage v14", ConfigurationSaving = {Enabled = false}})
 local Tab = Window:CreateTab("Main")
 local MiscTab = Window:CreateTab("Misc")
 
@@ -319,10 +333,14 @@ RunService.RenderStepped:Connect(function()
                 if Settings.Aimbot then
                     Camera.CFrame = CFrame.new(Camera.CFrame.Position, part.Position)
                 end
-                if Settings.Trigger and tick() - (spawnTimes[target.UserId] or 0) >= Settings.SpawnDelay then
+                
+                if Settings.Trigger then
                     local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
-                    if onScreen and (Vector2.new(screenPoint.X, screenPoint.Y) - center).Magnitude < Settings.TriggerFOV then
-                        if tick() - lastClick >= 0.05 then
+                    local dist = (Vector2.new(screenPoint.X, screenPoint.Y) - center).Magnitude
+                    
+                    if dist < Settings.TriggerFOV and tick() - lastClick >= 0.05 then
+                        local sTime = spawnTimes[target.UserId] or 0
+                        if tick() - sTime >= Settings.SpawnDelay then
                             VirtualInputManager:SendMouseButtonEvent(Settings.ClickX, Settings.ClickY, 0, true, game, 1)
                             task.delay(0.01, function() VirtualInputManager:SendMouseButtonEvent(Settings.ClickX, Settings.ClickY, 0, false, game, 1) end)
                             lastClick = tick()
