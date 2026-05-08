@@ -39,7 +39,7 @@ local function SaveSettings()
         TriggerFOV = Settings.TriggerFOV,
         ShowTriggerFOV = Settings.ShowTriggerFOV
     }
-    writefile(FileName, HttpService:JSONEncode(data))
+    pcall(function() writefile(FileName, HttpService:JSONEncode(data)) end)
 end
 
 local function LoadSettings()
@@ -61,30 +61,6 @@ end
 
 LoadSettings()
 
-local function ApplyAutoExec()
-    if autoExec then
-        local script_to_exec = 'loadstring(game:HttpGet("https://github.com/MrDani307/pistarena/raw/refs/heads/main/,"))()'
-        local qot = (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport) or queue_on_teleport or (getgenv and getgenv().queue_on_teleport)
-        if qot then qot(script_to_exec) end
-    end
-end
-
-ApplyAutoExec()
-
-local function trackSpawn(char)
-    local p = Players:GetPlayerFromCharacter(char)
-    if p then spawnTimes[p.UserId] = tick() end
-end
-
-for _, p in pairs(Players:GetPlayers()) do
-    if p.Character then trackSpawn(p.Character) end
-    p.CharacterAdded:Connect(trackSpawn)
-end
-
-Players.PlayerAdded:Connect(function(p)
-    p.CharacterAdded:Connect(trackSpawn)
-end)
-
 if Player.PlayerGui:FindFirstChild("BlackDynamicJoystick") then
     Player.PlayerGui.BlackDynamicJoystick:Destroy()
 end
@@ -93,7 +69,16 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "BlackDynamicJoystick"
 ScreenGui.Parent = Player:WaitForChild("PlayerGui")
 ScreenGui.ResetOnSpawn = false
-ScreenGui.Enabled = isEnabled or Settings.Aimbot or Settings.Trigger
+
+local function updateUIState()
+    local shouldShowUI = isEnabled or Settings.Aimbot or Settings.Trigger
+    ScreenGui.Enabled = shouldShowUI
+    pcall(function() 
+        if Player.PlayerGui:FindFirstChild("TouchGui") then
+            Player.PlayerGui.TouchGui.Enabled = not shouldShowUI 
+        end
+    end)
+end
 
 local CaptureArea = Instance.new("Frame", ScreenGui)
 CaptureArea.Name = "CaptureArea"
@@ -143,55 +128,18 @@ TriggerCircle.Filled = false
 TriggerCircle.Color = Color3.fromRGB(255, 0, 0)
 TriggerCircle.Visible = false
 
-local function IsVisible(part)
-    local rayParams = RaycastParams.new()
-    rayParams.FilterType = Enum.RaycastFilterType.Exclude
-    rayParams.FilterDescendantsInstances = {Player.Character, Camera}
-    local result = workspace:Raycast(Camera.CFrame.Position, (part.Position - Camera.CFrame.Position).Unit * (part.Position - Camera.CFrame.Position).Magnitude, rayParams)
-    return result == nil or result.Instance:IsDescendantOf(part.Parent)
+local function trackSpawn(char)
+    local p = Players:GetPlayerFromCharacter(char)
+    if p then spawnTimes[p.UserId] = tick() end
 end
 
-local function GetClosestTarget()
-    local target, shortestDist = nil, math.huge
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= Player and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
-            if Settings.TeamCheck and p.Team == Player.Team and p.Team ~= nil then continue end
-            local part = p.Character:FindFirstChild(Settings.AimPart) or p.Character:FindFirstChild("HumanoidRootPart")
-            if part then
-                if Settings.WallCheck and not IsVisible(part) then continue end
-                local dist = (part.Position - Camera.CFrame.Position).Magnitude
-                if dist < shortestDist then
-                    shortestDist = dist
-                    target = p
-                end
-            end
-        end
-    end
-    return target
+for _, p in pairs(Players:GetPlayers()) do
+    if p.Character then trackSpawn(p.Character) end
+    p.CharacterAdded:Connect(trackSpawn)
 end
 
-task.spawn(function()
-    while true do
-        for _, player in ipairs(Players:GetPlayers()) do
-            if highlightsEnabled and player ~= Player and player.Character then
-                local highlight = player.Character:FindFirstChild("DeltaHighlight") or Instance.new("Highlight", player.Character)
-                highlight.Name = "DeltaHighlight"
-                highlight.FillTransparency = 0.5
-                highlight.OutlineTransparency = 0
-                if player.Team == Player.Team and player.Team ~= nil then
-                    highlight.FillColor = Color3.fromRGB(0, 0, 255)
-                    highlight.OutlineColor = Color3.fromRGB(0, 0, 255)
-                else
-                    highlight.FillColor = Color3.fromRGB(255, 0, 0)
-                    highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
-                end
-            else
-                local h = player.Character and player.Character:FindFirstChild("DeltaHighlight")
-                if h then h:Destroy() end
-            end
-        end
-        task.wait(0.3)
-    end
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(trackSpawn)
 end)
 
 local dragging, inputObject = false, nil
@@ -240,15 +188,9 @@ end)
 local Rayfield = loadstring(game:HttpGet("https://raw.githubusercontent.com/linhmcfake/LuaLibrary/refs/heads/main/RayField.lua"))()
 Rayfield.Notify = function() end
 
-local Window = Rayfield:CreateWindow({Name = "Pistol Arena Rage v10", ConfigurationSaving = {Enabled = false}})
+local Window = Rayfield:CreateWindow({Name = "Pistol Arena Rage v11", ConfigurationSaving = {Enabled = false}})
 local Tab = Window:CreateTab("Main")
 local MiscTab = Window:CreateTab("Misc")
-
-local function updateUIState()
-    local shouldShowUI = isEnabled or Settings.Aimbot or Settings.Trigger
-    ScreenGui.Enabled = shouldShowUI
-    pcall(function() Player.PlayerGui.TouchGui.Enabled = not shouldShowUI end)
-end
 
 Tab:CreateToggle({
     Name = "Master Toggle",
@@ -285,11 +227,17 @@ MiscTab:CreateToggle({
     Callback = function(v)
         autoExec = v
         SaveSettings()
-        ApplyAutoExec()
     end
 })
 
-local lastClick = 0
+updateUIState()
+
+if autoExec then
+    local script_to_exec = 'loadstring(game:HttpGet("https://github.com/MrDani307/pistarena/raw/refs/heads/main/,"))()'
+    local qot = (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport) or queue_on_teleport or (getgenv and getgenv().queue_on_teleport)
+    if qot then qot(script_to_exec) end
+end
+
 RunService.RenderStepped:Connect(function()
     local char = Player.Character
     local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
@@ -320,28 +268,37 @@ RunService.RenderStepped:Connect(function()
             end
         end
 
-        if hum then hum:Move(moveVector, true) end
+        if hum and ScreenGui.Enabled then hum:Move(moveVector, true) end
 
-        local target = GetClosestTarget()
-        if target and target.Character then
-            local part = target.Character:FindFirstChild(Settings.AimPart) or target.Character:FindFirstChild("HumanoidRootPart")
-            if part then
-                if Settings.Aimbot then
-                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, part.Position)
-                end
-                
-                if Settings.Trigger then
-                    local sTime = spawnTimes[target.UserId] or 0
-                    if tick() - sTime >= Settings.SpawnDelay then
-                        local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
-                        if onScreen and screenPoint.Z > 0 then
-                            local dist = (Vector2.new(screenPoint.X, screenPoint.Y) - center).Magnitude
-                            if dist < Settings.TriggerFOV and tick() - lastClick >= 0.05 then
-                                VirtualInputManager:SendMouseButtonEvent(Settings.ClickX, Settings.ClickY, 0, true, game, 1)
-                                task.delay(0.01, function() VirtualInputManager:SendMouseButtonEvent(Settings.ClickX, Settings.ClickY, 0, false, game, 1) end)
-                                lastClick = tick()
+        if Settings.Aimbot or Settings.Trigger then
+            local target = nil
+            local shortestDist = math.huge
+            for _, p in pairs(Players:GetPlayers()) do
+                if p ~= Player and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+                    if not Settings.TeamCheck or p.Team ~= Player.Team then
+                        local part = p.Character:FindFirstChild(Settings.AimPart) or p.Character:FindFirstChild("HumanoidRootPart")
+                        if part then
+                            local rayParams = RaycastParams.new()
+                            rayParams.FilterType = Enum.RaycastFilterType.Exclude
+                            rayParams.FilterDescendantsInstances = {char, Camera}
+                            local res = workspace:Raycast(Camera.CFrame.Position, (part.Position - Camera.CFrame.Position).Unit * (part.Position - Camera.CFrame.Position).Magnitude, rayParams)
+                            if not res or res.Instance:IsDescendantOf(part.Parent) then
+                                local dist = (part.Position - Camera.CFrame.Position).Magnitude
+                                if dist < shortestDist then shortestDist = dist; target = p end
                             end
                         end
+                    end
+                end
+            end
+
+            if target and target.Character then
+                local part = target.Character:FindFirstChild(Settings.AimPart) or target.Character:FindFirstChild("HumanoidRootPart")
+                if Settings.Aimbot then Camera.CFrame = CFrame.new(Camera.CFrame.Position, part.Position) end
+                if Settings.Trigger and tick() - (spawnTimes[target.UserId] or 0) >= Settings.SpawnDelay then
+                    local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
+                    if onScreen and (Vector2.new(screenPoint.X, screenPoint.Y) - center).Magnitude < Settings.TriggerFOV then
+                        VirtualInputManager:SendMouseButtonEvent(Settings.ClickX, Settings.ClickY, 0, true, game, 1)
+                        task.delay(0.01, function() VirtualInputManager:SendMouseButtonEvent(Settings.ClickX, Settings.ClickY, 0, false, game, 1) end)
                     end
                 end
             end
