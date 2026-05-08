@@ -1,0 +1,291 @@
+local Player = game.Players.LocalPlayer
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local Camera = workspace.CurrentCamera
+
+local isEnabled = false
+local highlightsEnabled = true
+local tpEnabled = false
+local aaEnabled = false
+local spawnTimes = {}
+
+local Settings = {
+    Aimbot = false,
+    Trigger = true,
+    TriggerFOV = 10,
+    ShowTriggerFOV = false,
+    AimPart = "Head",
+    WallCheck = true,
+    TeamCheck = true,
+    ClickX = 664,
+    ClickY = 311,
+    SpawnDelay = 1.2
+}
+
+local function trackSpawn(char)
+    local p = Players:GetPlayerFromCharacter(char)
+    if p then spawnTimes[p.UserId] = tick() end
+end
+
+for _, p in pairs(Players:GetPlayers()) do
+    if p.Character then trackSpawn(p.Character) end
+    p.CharacterAdded:Connect(trackSpawn)
+end
+
+Players.PlayerAdded:Connect(function(p)
+    p.CharacterAdded:Connect(trackSpawn)
+end)
+
+if Player.PlayerGui:FindFirstChild("BlackDynamicJoystick") then
+    Player.PlayerGui.BlackDynamicJoystick:Destroy()
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "BlackDynamicJoystick"
+ScreenGui.Parent = Player:WaitForChild("PlayerGui")
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Enabled = false
+
+local CaptureArea = Instance.new("Frame", ScreenGui)
+CaptureArea.Name = "CaptureArea"
+CaptureArea.Size = UDim2.new(0.5, 0, 1, 0)
+CaptureArea.BackgroundTransparency = 1
+CaptureArea.Active = true
+
+local Base = Instance.new("Frame", ScreenGui)
+Base.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+Base.BackgroundTransparency = 0.85
+Base.Size = UDim2.new(0, 40, 0, 40)
+Base.Visible = false
+Instance.new("UICorner", Base).CornerRadius = UDim.new(1, 0)
+
+local dots = {}
+for i = 1, 6 do
+    local dot = Instance.new("Frame", ScreenGui)
+    dot.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    dot.BackgroundTransparency = 0.95 - (i * 0.05)
+    dot.Size = UDim2.new(0, 6 + (i * 2), 0, 6 + (i * 2))
+    dot.Visible = false
+    Instance.new("UICorner", dot).CornerRadius = UDim.new(1, 0)
+    table.insert(dots, dot)
+end
+
+local Stick = Instance.new("Frame", ScreenGui)
+Stick.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+Stick.BackgroundTransparency = 0.5
+Stick.Size = UDim2.new(0, 45, 0, 45)
+Stick.Visible = false
+Stick.ZIndex = 5
+Instance.new("UICorner", Stick).CornerRadius = UDim.new(1, 0)
+
+local JumpButton = Instance.new("TextButton", ScreenGui)
+JumpButton.Name = "CustomJumpButton"
+JumpButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+JumpButton.BackgroundTransparency = 0.5
+JumpButton.Position = UDim2.new(1, -95, 1, -95) 
+JumpButton.Size = UDim2.new(0, 70, 0, 70)
+JumpButton.Text = ""
+Instance.new("UICorner", JumpButton).CornerRadius = UDim.new(1, 0)
+
+local TriggerCircle = Drawing.new("Circle")
+TriggerCircle.Thickness = 1
+TriggerCircle.NumSides = 100
+TriggerCircle.Filled = false
+TriggerCircle.Color = Color3.fromRGB(255, 0, 0)
+TriggerCircle.Visible = false
+
+local function IsVisible(part)
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Exclude
+    rayParams.FilterDescendantsInstances = {Player.Character, Camera}
+    local result = workspace:Raycast(Camera.CFrame.Position, (part.Position - Camera.CFrame.Position).Unit * (part.Position - Camera.CFrame.Position).Magnitude, rayParams)
+    return result == nil or result.Instance:IsDescendantOf(part.Parent)
+end
+
+local function GetClosestTarget()
+    local target, shortestDist = nil, math.huge
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= Player and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+            if Settings.TeamCheck and p.Team == Player.Team and p.Team ~= nil then continue end
+            local part = p.Character:FindFirstChild(Settings.AimPart) or p.Character:FindFirstChild("HumanoidRootPart")
+            if part then
+                if Settings.WallCheck and not IsVisible(part) then continue end
+                local dist = (part.Position - Camera.CFrame.Position).Magnitude
+                if dist < shortestDist then
+                    shortestDist = dist
+                    target = p
+                end
+            end
+        end
+    end
+    return target
+end
+
+task.spawn(function()
+    while true do
+        for _, player in ipairs(Players:GetPlayers()) do
+            if highlightsEnabled and player ~= Player and player.Character then
+                local highlight = player.Character:FindFirstChild("DeltaHighlight") or Instance.new("Highlight", player.Character)
+                highlight.Name = "DeltaHighlight"
+                highlight.FillTransparency = 0.5
+                highlight.OutlineTransparency = 0
+                if player.Team == Player.Team and player.Team ~= nil then
+                    highlight.FillColor = Color3.fromRGB(0, 0, 255)
+                    highlight.OutlineColor = Color3.fromRGB(0, 0, 255)
+                else
+                    highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                    highlight.OutlineColor = Color3.fromRGB(255, 0, 0)
+                end
+            else
+                local h = player.Character and player.Character:FindFirstChild("DeltaHighlight")
+                if h then h:Destroy() end
+            end
+        end
+        task.wait(0.3)
+    end
+end)
+
+local dragging, inputObject = false, nil
+local moveVector = Vector3.new(0, 0, 0)
+local startPos = Vector2.new(0, 0)
+
+JumpButton.MouseButton1Down:Connect(function()
+    VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+end)
+JumpButton.MouseButton1Up:Connect(function()
+    VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+end)
+
+CaptureArea.InputBegan:Connect(function(input)
+    if (input.UserInputType == Enum.UserInputType.Touch or input.UserInputType == Enum.UserInputType.MouseButton1) then
+        dragging, inputObject, startPos = true, input, Vector2.new(input.Position.X, input.Position.Y)
+        Base.Position, Base.Visible, Stick.Visible = UDim2.new(0, startPos.X - 20, 0, startPos.Y - 20), true, true
+        for _, d in pairs(dots) do d.Visible = true end
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input == inputObject then
+        local currentPos = Vector2.new(input.Position.X, input.Position.Y)
+        local diff = currentPos - startPos
+        if diff.Magnitude > 0 then
+            Stick.Position = UDim2.new(0, currentPos.X - 22.5, 0, currentPos.Y - 22.5)
+            for i, dot in pairs(dots) do
+                local dotPos = startPos + (diff * (i/7))
+                dot.Position = UDim2.new(0, dotPos.X - (dot.Size.X.Offset/2), 0, dotPos.Y - (dot.Size.Y.Offset/2))
+            end
+            local dir = diff.Unit
+            moveVector = Vector3.new(dir.X, 0, dir.Y)
+        end
+    end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+    if input == inputObject then
+        dragging, Base.Visible, Stick.Visible = false, false, false
+        for _, d in pairs(dots) do d.Visible = false end
+        moveVector = Vector3.new(0, 0, 0)
+    end
+end)
+
+local Rayfield = loadstring(game:HttpGet("https://raw.githubusercontent.com/linhmcfake/LuaLibrary/refs/heads/main/RayField.lua"))()
+Rayfield.Notify = function() end
+
+local Window = Rayfield:CreateWindow({Name = "sKillAura Rage v9", ConfigurationSaving = {Enabled = false}})
+local Tab = Window:CreateTab("Main")
+
+local function updateUIState()
+    local shouldShowUI = isEnabled or Settings.Aimbot or Settings.Trigger
+    ScreenGui.Enabled = shouldShowUI
+    pcall(function() Player.PlayerGui.TouchGui.Enabled = not shouldShowUI end)
+end
+
+local MToggle = Tab:CreateToggle({
+    Name = "Master Toggle (Quick Set)",
+    CurrentValue = false,
+    Callback = function(v)
+        isEnabled = v
+        Settings.Aimbot = v
+        Settings.Trigger = v
+        highlightsEnabled = v
+        tpEnabled = v
+        aaEnabled = v
+        updateUIState()
+    end
+})
+
+Tab:CreateToggle({Name = "Third Person", CurrentValue = false, Callback = function(v) tpEnabled = v end})
+Tab:CreateToggle({Name = "Anti-Aim (In Air)", CurrentValue = false, Callback = function(v) aaEnabled = v end})
+Tab:CreateToggle({Name = "ESP", CurrentValue = true, Callback = function(v) highlightsEnabled = v end})
+Tab:CreateToggle({Name = "360 Aimbot", CurrentValue = false, Callback = function(v) Settings.Aimbot = v; updateUIState() end})
+Tab:CreateToggle({Name = "Auto Trigger", CurrentValue = true, Callback = function(v) Settings.Trigger = v; updateUIState() end})
+
+Tab:CreateInput({
+    Name = "Trigger FOV",
+    PlaceholderText = "10",
+    Callback = function(t) Settings.TriggerFOV = tonumber(t) or 10 end
+})
+
+Tab:CreateToggle({Name = "Show FOV", CurrentValue = false, Callback = function(v) Settings.ShowTriggerFOV = v end})
+
+local lastClick = 0
+RunService.RenderStepped:Connect(function()
+    local char = Player.Character
+    local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+    
+    TriggerCircle.Radius = Settings.TriggerFOV
+    TriggerCircle.Position = center
+    TriggerCircle.Visible = Settings.ShowTriggerFOV
+
+    if tpEnabled then
+        Player.CameraMaxZoomDistance = 999999
+        Player.CameraMinZoomDistance = 0
+        Player.CameraMode = Enum.CameraMode.Classic
+    else
+        Player.CameraMaxZoomDistance = 0.5
+        Player.CameraMinZoomDistance = 0.5
+    end
+
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        local root = char:FindFirstChild("HumanoidRootPart")
+
+        if aaEnabled and root and hum then
+            if hum.FloorMaterial == Enum.Material.Air then
+                hum.AutoRotate = false
+                root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, math.rad(math.random(-180, 180)), 0)
+            else
+                hum.AutoRotate = true
+            end
+        end
+
+        if hum then hum:Move(moveVector, true) end
+
+        local target = GetClosestTarget()
+        if target and target.Character then
+            local part = target.Character:FindFirstChild(Settings.AimPart) or target.Character:FindFirstChild("HumanoidRootPart")
+            if part then
+                if Settings.Aimbot then
+                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, part.Position)
+                end
+                
+                if Settings.Trigger then
+                    local sTime = spawnTimes[target.UserId] or 0
+                    if tick() - sTime >= Settings.SpawnDelay then
+                        local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
+                        if onScreen and screenPoint.Z > 0 then
+                            local dist = (Vector2.new(screenPoint.X, screenPoint.Y) - center).Magnitude
+                            if dist < Settings.TriggerFOV and tick() - lastClick >= 0.05 then
+                                VirtualInputManager:SendMouseButtonEvent(Settings.ClickX, Settings.ClickY, 0, true, game, 1)
+                                task.delay(0.01, function() VirtualInputManager:SendMouseButtonEvent(Settings.ClickX, Settings.ClickY, 0, false, game, 1) end)
+                                lastClick = tick()
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end)
