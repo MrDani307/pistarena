@@ -3,12 +3,15 @@ local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+local HttpService = game:GetService("HttpService")
 local Camera = workspace.CurrentCamera
 
+local FileName = "PistolArenaConfig.json"
 local isEnabled = false
 local highlightsEnabled = true
 local tpEnabled = false
 local aaEnabled = false
+local autoExec = false
 local spawnTimes = {}
 
 local Settings = {
@@ -23,6 +26,50 @@ local Settings = {
     ClickY = 311,
     SpawnDelay = 1.2
 }
+
+local function SaveSettings()
+    local data = {
+        isEnabled = isEnabled,
+        highlightsEnabled = highlightsEnabled,
+        tpEnabled = tpEnabled,
+        aaEnabled = aaEnabled,
+        autoExec = autoExec,
+        Aimbot = Settings.Aimbot,
+        Trigger = Settings.Trigger,
+        TriggerFOV = Settings.TriggerFOV,
+        ShowTriggerFOV = Settings.ShowTriggerFOV
+    }
+    writefile(FileName, HttpService:JSONEncode(data))
+end
+
+local function LoadSettings()
+    if isfile(FileName) then
+        local success, data = pcall(function() return HttpService:JSONDecode(readfile(FileName)) end)
+        if success then
+            isEnabled = data.isEnabled
+            highlightsEnabled = data.highlightsEnabled
+            tpEnabled = data.tpEnabled
+            aaEnabled = data.aaEnabled
+            autoExec = data.autoExec
+            Settings.Aimbot = data.Aimbot
+            Settings.Trigger = data.Trigger
+            Settings.TriggerFOV = data.TriggerFOV
+            Settings.ShowTriggerFOV = data.ShowTriggerFOV
+        end
+    end
+end
+
+LoadSettings()
+
+local function ApplyAutoExec()
+    if autoExec then
+        local script_to_exec = 'loadstring(game:HttpGet("https://github.com/MrDani307/pistarena/raw/refs/heads/main/,"))()'
+        local qot = (syn and syn.queue_on_teleport) or (fluxus and fluxus.queue_on_teleport) or queue_on_teleport or (getgenv and getgenv().queue_on_teleport)
+        if qot then qot(script_to_exec) end
+    end
+end
+
+ApplyAutoExec()
 
 local function trackSpawn(char)
     local p = Players:GetPlayerFromCharacter(char)
@@ -46,7 +93,7 @@ local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "BlackDynamicJoystick"
 ScreenGui.Parent = Player:WaitForChild("PlayerGui")
 ScreenGui.ResetOnSpawn = false
-ScreenGui.Enabled = false
+ScreenGui.Enabled = isEnabled or Settings.Aimbot or Settings.Trigger
 
 local CaptureArea = Instance.new("Frame", ScreenGui)
 CaptureArea.Name = "CaptureArea"
@@ -193,8 +240,9 @@ end)
 local Rayfield = loadstring(game:HttpGet("https://raw.githubusercontent.com/linhmcfake/LuaLibrary/refs/heads/main/RayField.lua"))()
 Rayfield.Notify = function() end
 
-local Window = Rayfield:CreateWindow({Name = "sKillAura Rage v9", ConfigurationSaving = {Enabled = false}})
+local Window = Rayfield:CreateWindow({Name = "Pistol Arena Rage v10", ConfigurationSaving = {Enabled = false}})
 local Tab = Window:CreateTab("Main")
+local MiscTab = Window:CreateTab("Misc")
 
 local function updateUIState()
     local shouldShowUI = isEnabled or Settings.Aimbot or Settings.Trigger
@@ -202,9 +250,9 @@ local function updateUIState()
     pcall(function() Player.PlayerGui.TouchGui.Enabled = not shouldShowUI end)
 end
 
-local MToggle = Tab:CreateToggle({
-    Name = "Master Toggle (Quick Set)",
-    CurrentValue = false,
+Tab:CreateToggle({
+    Name = "Master Toggle",
+    CurrentValue = isEnabled,
     Callback = function(v)
         isEnabled = v
         Settings.Aimbot = v
@@ -213,22 +261,33 @@ local MToggle = Tab:CreateToggle({
         tpEnabled = v
         aaEnabled = v
         updateUIState()
+        SaveSettings()
     end
 })
 
-Tab:CreateToggle({Name = "Third Person", CurrentValue = false, Callback = function(v) tpEnabled = v end})
-Tab:CreateToggle({Name = "Anti-Aim (In Air)", CurrentValue = false, Callback = function(v) aaEnabled = v end})
-Tab:CreateToggle({Name = "ESP", CurrentValue = true, Callback = function(v) highlightsEnabled = v end})
-Tab:CreateToggle({Name = "360 Aimbot", CurrentValue = false, Callback = function(v) Settings.Aimbot = v; updateUIState() end})
-Tab:CreateToggle({Name = "Auto Trigger", CurrentValue = true, Callback = function(v) Settings.Trigger = v; updateUIState() end})
+Tab:CreateToggle({Name = "Third Person", CurrentValue = tpEnabled, Callback = function(v) tpEnabled = v; SaveSettings() end})
+Tab:CreateToggle({Name = "Anti-Aim (In Air)", CurrentValue = aaEnabled, Callback = function(v) aaEnabled = v; SaveSettings() end})
+Tab:CreateToggle({Name = "ESP", CurrentValue = highlightsEnabled, Callback = function(v) highlightsEnabled = v; SaveSettings() end})
+Tab:CreateToggle({Name = "360 Aimbot", CurrentValue = Settings.Aimbot, Callback = function(v) Settings.Aimbot = v; updateUIState(); SaveSettings() end})
+Tab:CreateToggle({Name = "Auto Trigger", CurrentValue = Settings.Trigger, Callback = function(v) Settings.Trigger = v; updateUIState(); SaveSettings() end})
 
 Tab:CreateInput({
     Name = "Trigger FOV",
-    PlaceholderText = "10",
-    Callback = function(t) Settings.TriggerFOV = tonumber(t) or 10 end
+    PlaceholderText = tostring(Settings.TriggerFOV),
+    Callback = function(t) Settings.TriggerFOV = tonumber(t) or 10; SaveSettings() end
 })
 
-Tab:CreateToggle({Name = "Show FOV", CurrentValue = false, Callback = function(v) Settings.ShowTriggerFOV = v end})
+Tab:CreateToggle({Name = "Show FOV", CurrentValue = Settings.ShowTriggerFOV, Callback = function(v) Settings.ShowTriggerFOV = v; SaveSettings() end})
+
+MiscTab:CreateToggle({
+    Name = "Auto Execute",
+    CurrentValue = autoExec,
+    Callback = function(v)
+        autoExec = v
+        SaveSettings()
+        ApplyAutoExec()
+    end
+})
 
 local lastClick = 0
 RunService.RenderStepped:Connect(function()
