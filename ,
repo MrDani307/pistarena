@@ -20,7 +20,7 @@ local Settings = {
     TriggerFOV = 10,
     ShowTriggerFOV = false,
     AimPart = "Head",
-    TeamCheck = true,
+    TeamCheck = false,
     ClickX = 664,
     ClickY = 311,
     SpawnDelay = 1.2
@@ -36,7 +36,8 @@ local function SaveSettings()
         Aimbot = Settings.Aimbot,
         Trigger = Settings.Trigger,
         TriggerFOV = Settings.TriggerFOV,
-        ShowTriggerFOV = Settings.ShowTriggerFOV
+        ShowTriggerFOV = Settings.ShowTriggerFOV,
+        TeamCheck = Settings.TeamCheck
     }
     pcall(function() writefile(FileName, HttpService:JSONEncode(data)) end)
 end
@@ -54,6 +55,7 @@ local function LoadSettings()
             Settings.Trigger = data.Trigger
             Settings.TriggerFOV = data.TriggerFOV
             Settings.ShowTriggerFOV = data.ShowTriggerFOV
+            Settings.TeamCheck = data.TeamCheck or false
         end
     end
 end
@@ -188,11 +190,11 @@ local function GetClosestTarget()
 
     for _, p in pairs(Players:GetPlayers()) do
         if p ~= Player and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
-            if not Settings.TeamCheck or p.Team ~= Player.Team then
+            if not Settings.TeamCheck or (p.Team ~= Player.Team) then
                 local part = p.Character:FindFirstChild(Settings.AimPart) or p.Character:FindFirstChild("HumanoidRootPart")
                 if part then
                     local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
-                    if onScreen then
+                    if onScreen and screenPoint.Z > 0 then
                         local dist = (Vector2.new(screenPoint.X, screenPoint.Y) - center).Magnitude
                         if dist < shortestDist then
                             shortestDist = dist
@@ -209,12 +211,12 @@ end
 task.spawn(function()
     while true do
         for _, p in ipairs(Players:GetPlayers()) do
-            if highlightsEnabled and p ~= Player and p.Character then
+            if highlightsEnabled and p ~= Player and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
                 local h = p.Character:FindFirstChild("DeltaHighlight") or Instance.new("Highlight", p.Character)
                 h.Name = "DeltaHighlight"
                 h.FillTransparency = 0.5
                 h.OutlineTransparency = 0
-                local isTeammate = p.Team == Player.Team and p.Team ~= nil
+                local isTeammate = Settings.TeamCheck and p.Team == Player.Team and p.Team ~= nil
                 h.FillColor = isTeammate and Color3.fromRGB(0, 0, 255) or Color3.fromRGB(255, 0, 0)
                 h.OutlineColor = isTeammate and Color3.fromRGB(0, 0, 255) or Color3.fromRGB(255, 0, 0)
             else
@@ -222,14 +224,14 @@ task.spawn(function()
                 if h then h:Destroy() end
             end
         end
-        task.wait(0.5)
+        task.wait(0.2)
     end
 end)
 
 local Rayfield = loadstring(game:HttpGet("https://raw.githubusercontent.com/linhmcfake/LuaLibrary/refs/heads/main/RayField.lua"))()
 Rayfield.Notify = function() end
 
-local Window = Rayfield:CreateWindow({Name = "Pistol Arena Rage v12", ConfigurationSaving = {Enabled = false}})
+local Window = Rayfield:CreateWindow({Name = "Pistol Arena Rage v13", ConfigurationSaving = {Enabled = false}})
 local Tab = Window:CreateTab("Main")
 local MiscTab = Window:CreateTab("Misc")
 
@@ -253,6 +255,7 @@ Tab:CreateToggle({Name = "Anti-Aim", CurrentValue = aaEnabled, Callback = functi
 Tab:CreateToggle({Name = "ESP", CurrentValue = highlightsEnabled, Callback = function(v) highlightsEnabled = v; SaveSettings() end})
 Tab:CreateToggle({Name = "360 Aimbot", CurrentValue = Settings.Aimbot, Callback = function(v) Settings.Aimbot = v; updateUIState(); SaveSettings() end})
 Tab:CreateToggle({Name = "Auto Trigger", CurrentValue = Settings.Trigger, Callback = function(v) Settings.Trigger = v; updateUIState(); SaveSettings() end})
+Tab:CreateToggle({Name = "Team Check", CurrentValue = Settings.TeamCheck, Callback = function(v) Settings.TeamCheck = v; SaveSettings() end})
 
 Tab:CreateInput({
     Name = "Trigger FOV",
@@ -309,22 +312,20 @@ RunService.RenderStepped:Connect(function()
 
         if hum and ScreenGui.Enabled then hum:Move(moveVector, true) end
 
-        if Settings.Aimbot or Settings.Trigger then
-            local target = GetClosestTarget()
-            if target and target.Character then
-                local part = target.Character:FindFirstChild(Settings.AimPart) or target.Character:FindFirstChild("HumanoidRootPart")
-                if part then
-                    if Settings.Aimbot then
-                        Camera.CFrame = CFrame.new(Camera.CFrame.Position, part.Position)
-                    end
-                    if Settings.Trigger and tick() - (spawnTimes[target.UserId] or 0) >= Settings.SpawnDelay then
-                        local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
-                        if onScreen and (Vector2.new(screenPoint.X, screenPoint.Y) - center).Magnitude < Settings.TriggerFOV then
-                            if tick() - lastClick >= 0.05 then
-                                VirtualInputManager:SendMouseButtonEvent(Settings.ClickX, Settings.ClickY, 0, true, game, 1)
-                                task.delay(0.01, function() VirtualInputManager:SendMouseButtonEvent(Settings.ClickX, Settings.ClickY, 0, false, game, 1) end)
-                                lastClick = tick()
-                            end
+        local target = GetClosestTarget()
+        if target and target.Character then
+            local part = target.Character:FindFirstChild(Settings.AimPart) or target.Character:FindFirstChild("HumanoidRootPart")
+            if part then
+                if Settings.Aimbot then
+                    Camera.CFrame = CFrame.new(Camera.CFrame.Position, part.Position)
+                end
+                if Settings.Trigger and tick() - (spawnTimes[target.UserId] or 0) >= Settings.SpawnDelay then
+                    local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
+                    if onScreen and (Vector2.new(screenPoint.X, screenPoint.Y) - center).Magnitude < Settings.TriggerFOV then
+                        if tick() - lastClick >= 0.05 then
+                            VirtualInputManager:SendMouseButtonEvent(Settings.ClickX, Settings.ClickY, 0, true, game, 1)
+                            task.delay(0.01, function() VirtualInputManager:SendMouseButtonEvent(Settings.ClickX, Settings.ClickY, 0, false, game, 1) end)
+                            lastClick = tick()
                         end
                     end
                 end
