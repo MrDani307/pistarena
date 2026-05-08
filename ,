@@ -7,7 +7,7 @@ local HttpService = game:GetService("HttpService")
 local Camera = workspace.CurrentCamera
 
 local FileName = "PistolArenaConfig.json"
-local isEnabled = false
+local masterEnabled = false
 local highlightsEnabled = true
 local tpEnabled = false
 local aaEnabled = false
@@ -20,7 +20,6 @@ local Settings = {
     TriggerFOV = 10,
     ShowTriggerFOV = false,
     AimPart = "Head",
-    WallCheck = true,
     TeamCheck = true,
     ClickX = 664,
     ClickY = 311,
@@ -29,7 +28,7 @@ local Settings = {
 
 local function SaveSettings()
     local data = {
-        isEnabled = isEnabled,
+        masterEnabled = masterEnabled,
         highlightsEnabled = highlightsEnabled,
         tpEnabled = tpEnabled,
         aaEnabled = aaEnabled,
@@ -46,7 +45,7 @@ local function LoadSettings()
     if isfile(FileName) then
         local success, data = pcall(function() return HttpService:JSONDecode(readfile(FileName)) end)
         if success then
-            isEnabled = data.isEnabled
+            masterEnabled = data.masterEnabled or false
             highlightsEnabled = data.highlightsEnabled
             tpEnabled = data.tpEnabled
             aaEnabled = data.aaEnabled
@@ -71,17 +70,16 @@ ScreenGui.Parent = Player:WaitForChild("PlayerGui")
 ScreenGui.ResetOnSpawn = false
 
 local function updateUIState()
-    local shouldShowUI = isEnabled or Settings.Aimbot or Settings.Trigger
-    ScreenGui.Enabled = shouldShowUI
-    pcall(function() 
+    local active = masterEnabled or Settings.Aimbot or Settings.Trigger
+    ScreenGui.Enabled = active
+    pcall(function()
         if Player.PlayerGui:FindFirstChild("TouchGui") then
-            Player.PlayerGui.TouchGui.Enabled = not shouldShowUI 
+            Player.PlayerGui.TouchGui.Enabled = not active
         end
     end)
 end
 
 local CaptureArea = Instance.new("Frame", ScreenGui)
-CaptureArea.Name = "CaptureArea"
 CaptureArea.Size = UDim2.new(0.5, 0, 1, 0)
 CaptureArea.BackgroundTransparency = 1
 CaptureArea.Active = true
@@ -113,7 +111,6 @@ Stick.ZIndex = 5
 Instance.new("UICorner", Stick).CornerRadius = UDim.new(1, 0)
 
 local JumpButton = Instance.new("TextButton", ScreenGui)
-JumpButton.Name = "CustomJumpButton"
 JumpButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 JumpButton.BackgroundTransparency = 0.5
 JumpButton.Position = UDim2.new(1, -95, 1, -95) 
@@ -185,18 +182,62 @@ UserInputService.InputEnded:Connect(function(input)
     end
 end)
 
+local function GetClosestTarget()
+    local target, shortestDist = nil, math.huge
+    local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
+
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= Player and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
+            if not Settings.TeamCheck or p.Team ~= Player.Team then
+                local part = p.Character:FindFirstChild(Settings.AimPart) or p.Character:FindFirstChild("HumanoidRootPart")
+                if part then
+                    local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
+                    if onScreen then
+                        local dist = (Vector2.new(screenPoint.X, screenPoint.Y) - center).Magnitude
+                        if dist < shortestDist then
+                            shortestDist = dist
+                            target = p
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return target
+end
+
+task.spawn(function()
+    while true do
+        for _, p in ipairs(Players:GetPlayers()) do
+            if highlightsEnabled and p ~= Player and p.Character then
+                local h = p.Character:FindFirstChild("DeltaHighlight") or Instance.new("Highlight", p.Character)
+                h.Name = "DeltaHighlight"
+                h.FillTransparency = 0.5
+                h.OutlineTransparency = 0
+                local isTeammate = p.Team == Player.Team and p.Team ~= nil
+                h.FillColor = isTeammate and Color3.fromRGB(0, 0, 255) or Color3.fromRGB(255, 0, 0)
+                h.OutlineColor = isTeammate and Color3.fromRGB(0, 0, 255) or Color3.fromRGB(255, 0, 0)
+            else
+                local h = p.Character and p.Character:FindFirstChild("DeltaHighlight")
+                if h then h:Destroy() end
+            end
+        end
+        task.wait(0.5)
+    end
+end)
+
 local Rayfield = loadstring(game:HttpGet("https://raw.githubusercontent.com/linhmcfake/LuaLibrary/refs/heads/main/RayField.lua"))()
 Rayfield.Notify = function() end
 
-local Window = Rayfield:CreateWindow({Name = "Pistol Arena Rage v11", ConfigurationSaving = {Enabled = false}})
+local Window = Rayfield:CreateWindow({Name = "Pistol Arena Rage v12", ConfigurationSaving = {Enabled = false}})
 local Tab = Window:CreateTab("Main")
 local MiscTab = Window:CreateTab("Misc")
 
 Tab:CreateToggle({
     Name = "Master Toggle",
-    CurrentValue = isEnabled,
+    CurrentValue = masterEnabled,
     Callback = function(v)
-        isEnabled = v
+        masterEnabled = v
         Settings.Aimbot = v
         Settings.Trigger = v
         highlightsEnabled = v
@@ -208,7 +249,7 @@ Tab:CreateToggle({
 })
 
 Tab:CreateToggle({Name = "Third Person", CurrentValue = tpEnabled, Callback = function(v) tpEnabled = v; SaveSettings() end})
-Tab:CreateToggle({Name = "Anti-Aim (In Air)", CurrentValue = aaEnabled, Callback = function(v) aaEnabled = v; SaveSettings() end})
+Tab:CreateToggle({Name = "Anti-Aim", CurrentValue = aaEnabled, Callback = function(v) aaEnabled = v; SaveSettings() end})
 Tab:CreateToggle({Name = "ESP", CurrentValue = highlightsEnabled, Callback = function(v) highlightsEnabled = v; SaveSettings() end})
 Tab:CreateToggle({Name = "360 Aimbot", CurrentValue = Settings.Aimbot, Callback = function(v) Settings.Aimbot = v; updateUIState(); SaveSettings() end})
 Tab:CreateToggle({Name = "Auto Trigger", CurrentValue = Settings.Trigger, Callback = function(v) Settings.Trigger = v; updateUIState(); SaveSettings() end})
@@ -224,10 +265,7 @@ Tab:CreateToggle({Name = "Show FOV", CurrentValue = Settings.ShowTriggerFOV, Cal
 MiscTab:CreateToggle({
     Name = "Auto Execute",
     CurrentValue = autoExec,
-    Callback = function(v)
-        autoExec = v
-        SaveSettings()
-    end
+    Callback = function(v) autoExec = v; SaveSettings() end
 })
 
 updateUIState()
@@ -238,6 +276,7 @@ if autoExec then
     if qot then qot(script_to_exec) end
 end
 
+local lastClick = 0
 RunService.RenderStepped:Connect(function()
     local char = Player.Character
     local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
@@ -247,7 +286,7 @@ RunService.RenderStepped:Connect(function()
     TriggerCircle.Visible = Settings.ShowTriggerFOV
 
     if tpEnabled then
-        Player.CameraMaxZoomDistance = 999999
+        Player.CameraMaxZoomDistance = 1000
         Player.CameraMinZoomDistance = 0
         Player.CameraMode = Enum.CameraMode.Classic
     else
@@ -271,34 +310,22 @@ RunService.RenderStepped:Connect(function()
         if hum and ScreenGui.Enabled then hum:Move(moveVector, true) end
 
         if Settings.Aimbot or Settings.Trigger then
-            local target = nil
-            local shortestDist = math.huge
-            for _, p in pairs(Players:GetPlayers()) do
-                if p ~= Player and p.Character and p.Character:FindFirstChild("Humanoid") and p.Character.Humanoid.Health > 0 then
-                    if not Settings.TeamCheck or p.Team ~= Player.Team then
-                        local part = p.Character:FindFirstChild(Settings.AimPart) or p.Character:FindFirstChild("HumanoidRootPart")
-                        if part then
-                            local rayParams = RaycastParams.new()
-                            rayParams.FilterType = Enum.RaycastFilterType.Exclude
-                            rayParams.FilterDescendantsInstances = {char, Camera}
-                            local res = workspace:Raycast(Camera.CFrame.Position, (part.Position - Camera.CFrame.Position).Unit * (part.Position - Camera.CFrame.Position).Magnitude, rayParams)
-                            if not res or res.Instance:IsDescendantOf(part.Parent) then
-                                local dist = (part.Position - Camera.CFrame.Position).Magnitude
-                                if dist < shortestDist then shortestDist = dist; target = p end
-                            end
-                        end
-                    end
-                end
-            end
-
+            local target = GetClosestTarget()
             if target and target.Character then
                 local part = target.Character:FindFirstChild(Settings.AimPart) or target.Character:FindFirstChild("HumanoidRootPart")
-                if Settings.Aimbot then Camera.CFrame = CFrame.new(Camera.CFrame.Position, part.Position) end
-                if Settings.Trigger and tick() - (spawnTimes[target.UserId] or 0) >= Settings.SpawnDelay then
-                    local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
-                    if onScreen and (Vector2.new(screenPoint.X, screenPoint.Y) - center).Magnitude < Settings.TriggerFOV then
-                        VirtualInputManager:SendMouseButtonEvent(Settings.ClickX, Settings.ClickY, 0, true, game, 1)
-                        task.delay(0.01, function() VirtualInputManager:SendMouseButtonEvent(Settings.ClickX, Settings.ClickY, 0, false, game, 1) end)
+                if part then
+                    if Settings.Aimbot then
+                        Camera.CFrame = CFrame.new(Camera.CFrame.Position, part.Position)
+                    end
+                    if Settings.Trigger and tick() - (spawnTimes[target.UserId] or 0) >= Settings.SpawnDelay then
+                        local screenPoint, onScreen = Camera:WorldToViewportPoint(part.Position)
+                        if onScreen and (Vector2.new(screenPoint.X, screenPoint.Y) - center).Magnitude < Settings.TriggerFOV then
+                            if tick() - lastClick >= 0.05 then
+                                VirtualInputManager:SendMouseButtonEvent(Settings.ClickX, Settings.ClickY, 0, true, game, 1)
+                                task.delay(0.01, function() VirtualInputManager:SendMouseButtonEvent(Settings.ClickX, Settings.ClickY, 0, false, game, 1) end)
+                                lastClick = tick()
+                            end
+                        end
                     end
                 end
             end
