@@ -9,10 +9,10 @@ local Camera = workspace.CurrentCamera
 local FileName = "PistolArenaConfig.json"
 local masterEnabled = false
 local highlightsEnabled = true
-local tpEnabled = false
 local aaEnabled = false
 local autoExec = false
 local spawnTimes = {}
+local lastView = nil
 
 local Settings = {
     Aimbot = false,
@@ -30,7 +30,6 @@ local function SaveSettings()
     local data = {
         masterEnabled = masterEnabled,
         highlightsEnabled = highlightsEnabled,
-        tpEnabled = tpEnabled,
         aaEnabled = aaEnabled,
         autoExec = autoExec,
         Aimbot = Settings.Aimbot,
@@ -48,7 +47,6 @@ local function LoadSettings()
         if success then
             masterEnabled = data.masterEnabled or false
             highlightsEnabled = data.highlightsEnabled
-            tpEnabled = data.tpEnabled
             aaEnabled = data.aaEnabled
             autoExec = data.autoExec
             Settings.Aimbot = data.Aimbot
@@ -245,7 +243,7 @@ end)
 local Rayfield = loadstring(game:HttpGet("https://raw.githubusercontent.com/linhmcfake/LuaLibrary/refs/heads/main/RayField.lua"))()
 Rayfield.Notify = function() end
 
-local Window = Rayfield:CreateWindow({Name = "Pistol Arena Rage v14", ConfigurationSaving = {Enabled = false}})
+local Window = Rayfield:CreateWindow({Name = "Pistol Arena Rage v15", ConfigurationSaving = {Enabled = false}})
 local Tab = Window:CreateTab("Main")
 local MiscTab = Window:CreateTab("Misc")
 
@@ -257,14 +255,12 @@ Tab:CreateToggle({
         Settings.Aimbot = v
         Settings.Trigger = v
         highlightsEnabled = v
-        tpEnabled = v
         aaEnabled = v
         updateUIState()
         SaveSettings()
     end
 })
 
-Tab:CreateToggle({Name = "Third Person", CurrentValue = tpEnabled, Callback = function(v) tpEnabled = v; SaveSettings() end})
 Tab:CreateToggle({Name = "Anti-Aim", CurrentValue = aaEnabled, Callback = function(v) aaEnabled = v; SaveSettings() end})
 Tab:CreateToggle({Name = "ESP", CurrentValue = highlightsEnabled, Callback = function(v) highlightsEnabled = v; SaveSettings() end})
 Tab:CreateToggle({Name = "360 Aimbot", CurrentValue = Settings.Aimbot, Callback = function(v) Settings.Aimbot = v; updateUIState(); SaveSettings() end})
@@ -302,15 +298,6 @@ RunService.RenderStepped:Connect(function()
     TriggerCircle.Position = center
     TriggerCircle.Visible = Settings.ShowTriggerFOV
 
-    if tpEnabled then
-        Player.CameraMaxZoomDistance = 1000
-        Player.CameraMinZoomDistance = 0
-        Player.CameraMode = Enum.CameraMode.Classic
-    else
-        Player.CameraMaxZoomDistance = 0.5
-        Player.CameraMinZoomDistance = 0.5
-    end
-
     if char then
         local hum = char:FindFirstChildOfClass("Humanoid")
         local root = char:FindFirstChild("HumanoidRootPart")
@@ -331,6 +318,7 @@ RunService.RenderStepped:Connect(function()
             local part = target.Character:FindFirstChild(Settings.AimPart) or target.Character:FindFirstChild("HumanoidRootPart")
             if part then
                 if Settings.Aimbot then
+                    if not lastView then lastView = Camera.CFrame end
                     Camera.CFrame = CFrame.new(Camera.CFrame.Position, part.Position)
                 end
                 
@@ -347,6 +335,11 @@ RunService.RenderStepped:Connect(function()
                         end
                     end
                 end
+            end
+        else
+            if lastView and Settings.Aimbot then
+                Camera.CFrame = lastView
+                lastView = nil
             end
         end
     end
