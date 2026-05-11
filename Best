@@ -23,16 +23,15 @@ local spawnTimes = {}
 local PlaceID = game.PlaceId
 local AllIDs = {}
 local foundAnything = ""
+local actualHour = os.date("!*t").hour
 
 -- Переменные для логики переключения целей
 local currentTPTarget = nil 
 local targetStartTime = 0
 
--- Счётчик киллов и таймер сессии
+-- [НОВОЕ] Счётчик киллов, таймер сессии, последняя цель
 local killCount = 0
 local sessionStart = tick()
-local killCountLabel = nil
-local sessionLabel = nil
 local lastTargetName = ""
 
 local Settings = {
@@ -47,7 +46,7 @@ local Settings = {
 
 -- [ЛОГИКА SERVER HOP]
 local function TPReturner()
-    local Site
+    local Site;
     if foundAnything == "" then
         Site = HttpService:JSONDecode(game:HttpGet('https://games.roblox.com/v1/games/' .. PlaceID .. '/servers/Public?sortOrder=Asc&limit=100'))
     else
@@ -65,11 +64,13 @@ local function TPReturner()
             if isfile("NotSameServers.json") then
                 pcall(function() AllIDs = HttpService:JSONDecode(readfile("NotSameServers.json")) end)
             end
+            
             for _,Existing in pairs(AllIDs) do
                 if ID == tostring(Existing) then
                     Possible = false
                 end
             end
+            
             if Possible then
                 table.insert(AllIDs, ID)
                 pcall(function()
@@ -89,12 +90,14 @@ local function SafeTeleport()
     end)
 end
 
+-- [НОВОЕ] Rejoin
 local function Rejoin()
     pcall(function()
         TeleportService:Teleport(PlaceID, Player)
     end)
 end
 
+-- Отслеживание кика
 game:GetService("GuiService").ErrorMessageChanged:Connect(function()
     if autoFarmEnabled then
         task.wait(0.5)
@@ -163,7 +166,7 @@ local function updateUIState()
     end)
 end
 
--- FOV Circle (Drawing)
+-- [НОВОЕ] FOV Circle
 local fovCircle = Drawing.new("Circle")
 fovCircle.Visible = false
 fovCircle.Radius = Settings.TriggerFOV
@@ -171,13 +174,6 @@ fovCircle.Color = Color3.fromRGB(255, 255, 0)
 fovCircle.Thickness = 1.5
 fovCircle.Transparency = 0.6
 fovCircle.Filled = false
-
-RunService.RenderStepped:Connect(function()
-    local vp = Camera.ViewportSize
-    fovCircle.Position = Vector2.new(vp.X / 2, vp.Y / 2)
-    fovCircle.Radius = Settings.TriggerFOV
-    fovCircle.Visible = Settings.ShowTriggerFOV and (Settings.Trigger or Settings.Aimbot)
-end)
 
 local CaptureArea = Instance.new("Frame", ScreenGui)
 CaptureArea.Size = UDim2.new(0.5, 0, 1, 0)
@@ -344,7 +340,7 @@ local function GetClosest360()
     return target
 end
 
--- ЛОГИКА AUTO START
+-- ЛОГИКА AUTO START (Часть Auto Farm)
 task.spawn(function()
     while true do
         if autoFarmEnabled then
@@ -363,18 +359,19 @@ task.spawn(function()
     end
 end)
 
--- ЛОГИКА AUTO DEPLOY
+-- ЛОГИКА AUTO DEPLOY (Часть Auto Farm)
 task.spawn(function()
     local isDead = false
     while true do
         if autoFarmEnabled then
             local char = Player.Character
             local hum = char and char:FindFirstChildOfClass("Humanoid")
+            
             if (not char or not hum or hum.Health <= 0) and not isDead then
                 isDead = true
-                task.wait(2)
+                task.wait(2) 
                 triggerPaused = true
-                task.wait(0.5)
+                task.wait(0.5) 
                 local deployX, deployY = 497, 316 + 36
                 VirtualInputManager:SendMouseButtonEvent(deployX, deployY, 0, true, game, 1)
                 task.wait(0.05)
@@ -410,16 +407,18 @@ task.spawn(function()
     end
 end)
 
--- Таймер сессии (обновляет каждую секунду)
+-- [НОВОЕ] Таймер сессии
 task.spawn(function()
     while true do
         task.wait(1)
-        if sessionLabel then
+        if _G.sessionTimerLabel then
             local elapsed = math.floor(tick() - sessionStart)
             local h = math.floor(elapsed / 3600)
             local m = math.floor((elapsed % 3600) / 60)
             local s = elapsed % 60
-            sessionLabel.Text = string.format("Session: %02d:%02d:%02d", h, m, s)
+            pcall(function()
+                _G.sessionTimerLabel:Set(string.format("Session: %02d:%02d:%02d | Kills: %d", h, m, s, killCount))
+            end)
         end
     end
 end)
@@ -442,7 +441,6 @@ local Tabs = {
     Stats = Window:Tab({ Title = "Stats", Icon = "bar-chart-2" }),
 }
 
--- MAIN TAB
 Tabs.Main:Section({ Title = "Combat & Movement" })
 
 Tabs.Main:Toggle({
@@ -516,14 +514,16 @@ Tabs.Aimbot:Slider({
     Callback = function(v) Settings.TriggerFOV = v SaveSettings() end
 })
 
+-- [НОВОЕ] Show FOV Circle toggle
 Tabs.Aimbot:Toggle({
     Title = "Show FOV Circle",
     Value = Settings.ShowTriggerFOV,
     Callback = function(v) Settings.ShowTriggerFOV = v SaveSettings() end
 })
 
+-- [НОВОЕ] SpawnDelay слайдер
 Tabs.Aimbot:Slider({
-    Title = "Spawn Delay (сек)",
+    Title = "Spawn Delay (sec)",
     Value = { Min = 0, Max = 5, Default = Settings.SpawnDelay },
     Callback = function(v) Settings.SpawnDelay = v SaveSettings() end
 })
@@ -546,6 +546,7 @@ Tabs.Misc:Button({
     Callback = function() SafeTeleport() end
 })
 
+-- [НОВОЕ] Rejoin кнопка
 Tabs.Misc:Button({
     Title = "Rejoin",
     Desc = "Rejoin this place",
@@ -563,15 +564,13 @@ Tabs.Misc:Button({
 -- STATS TAB
 Tabs.Stats:Section({ Title = "Session Info" })
 
-killCountLabel = Tabs.Stats:Label({ Title = "Kills: 0" })
-sessionLabel = Tabs.Stats:Label({ Title = "Session: 00:00:00" })
+_G.sessionTimerLabel = Tabs.Stats:Label({ Title = "Session: 00:00:00 | Kills: 0" })
 
 Tabs.Stats:Button({
     Title = "Reset Stats",
     Callback = function()
         killCount = 0
         sessionStart = tick()
-        if killCountLabel then killCountLabel.Title = "Kills: 0" end
         WindUI:Notify({ Title = "Stats Reset", Content = "Kill count and timer reset.", Duration = 3 })
     end
 })
@@ -585,6 +584,11 @@ RunService.RenderStepped:Connect(function()
     local viewportSize = Camera.ViewportSize
     local center = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
 
+    -- [НОВОЕ] FOV Circle update
+    fovCircle.Position = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+    fovCircle.Radius = Settings.TriggerFOV
+    fovCircle.Visible = Settings.ShowTriggerFOV and (Settings.Trigger or Settings.Aimbot)
+
     if char and char:FindFirstChild("HumanoidRootPart") then
         local root = char.HumanoidRootPart
         local hum = char:FindFirstChildOfClass("Humanoid")
@@ -593,22 +597,23 @@ RunService.RenderStepped:Connect(function()
             local currentTime = tick()
             if not currentTPTarget or not currentTPTarget.Parent or currentTPTarget.Humanoid.Health <= 0 then
                 local pTarget = GetClosestAny()
+                -- [НОВОЕ] Уведомление о смене цели
                 local newName = pTarget and pTarget.Name or ""
-                if newName ~= lastTargetName and newName ~= "" then
+                if newName ~= "" and newName ~= lastTargetName then
                     lastTargetName = newName
-                    WindUI:Notify({ Title = "Target Changed", Content = "→ " .. newName, Duration = 2 })
+                    WindUI:Notify({ Title = "Target", Content = "→ " .. newName, Duration = 2 })
                 end
                 currentTPTarget = pTarget and pTarget.Character or nil
-                targetStartTime = currentTime
+                targetStartTime = currentTime 
             elseif (currentTime - targetStartTime) > 3 then
                 local pTarget = GetFarthestAny()
                 local newName = pTarget and pTarget.Name or ""
-                if newName ~= lastTargetName and newName ~= "" then
+                if newName ~= "" and newName ~= lastTargetName then
                     lastTargetName = newName
-                    WindUI:Notify({ Title = "Target Changed", Content = "→ " .. newName, Duration = 2 })
+                    WindUI:Notify({ Title = "Target", Content = "→ " .. newName, Duration = 2 })
                 end
                 currentTPTarget = pTarget and pTarget.Character or nil
-                targetStartTime = currentTime
+                targetStartTime = currentTime 
             end
 
             if currentTPTarget and currentTPTarget:FindFirstChild("HumanoidRootPart") then
@@ -638,16 +643,14 @@ RunService.RenderStepped:Connect(function()
                                 VirtualInputManager:SendMouseButtonEvent(viewportSize.X * 0.85, viewportSize.Y * 0.75, 0, false, game, 1)
                             end)
                             lastClick = tick()
+                            -- [НОВОЕ] Счётчик киллов
                             killCount = killCount + 1
-                            if killCountLabel then
-                                killCountLabel.Title = "Kills: " .. killCount
-                            end
                         end
                     end
                 end
             end
         end
-
+        
         if not autoFarmEnabled and hum and ScreenGui.Enabled then
             hum:Move(moveVector, true)
         end
