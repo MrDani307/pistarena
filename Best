@@ -27,12 +27,7 @@ local actualHour = os.date("!*t").hour
 
 -- Переменные для логики переключения целей
 local currentTPTarget = nil 
-local targetStartTime = 0
-
--- [НОВОЕ] Счётчик киллов, таймер сессии, последняя цель
-local killCount = 0
-local sessionStart = tick()
-local lastTargetName = ""
+local targetStartTime = 0 
 
 local Settings = {
     Aimbot = false,
@@ -90,13 +85,6 @@ local function SafeTeleport()
     end)
 end
 
--- [НОВОЕ] Rejoin
-local function Rejoin()
-    pcall(function()
-        TeleportService:Teleport(PlaceID, Player)
-    end)
-end
-
 -- Отслеживание кика
 game:GetService("GuiService").ErrorMessageChanged:Connect(function()
     if autoFarmEnabled then
@@ -118,8 +106,7 @@ local function SaveSettings()
         Trigger = Settings.Trigger,
         TriggerFOV = Settings.TriggerFOV,
         ShowTriggerFOV = Settings.ShowTriggerFOV,
-        TeamCheck = Settings.TeamCheck,
-        SpawnDelay = Settings.SpawnDelay
+        TeamCheck = Settings.TeamCheck
     }
     pcall(function() writefile(FileName, HttpService:JSONEncode(data)) end)
 end
@@ -139,7 +126,6 @@ local function LoadSettings()
             Settings.TriggerFOV = data.TriggerFOV or 10
             Settings.ShowTriggerFOV = data.ShowTriggerFOV or false
             Settings.TeamCheck = data.TeamCheck or false
-            Settings.SpawnDelay = data.SpawnDelay or 1.2
         end
     end
 end
@@ -165,15 +151,6 @@ local function updateUIState()
         end
     end)
 end
-
--- [НОВОЕ] FOV Circle
-local fovCircle = Drawing.new("Circle")
-fovCircle.Visible = false
-fovCircle.Radius = Settings.TriggerFOV
-fovCircle.Color = Color3.fromRGB(255, 255, 0)
-fovCircle.Thickness = 1.5
-fovCircle.Transparency = 0.6
-fovCircle.Filled = false
 
 local CaptureArea = Instance.new("Frame", ScreenGui)
 CaptureArea.Size = UDim2.new(0.5, 0, 1, 0)
@@ -407,22 +384,6 @@ task.spawn(function()
     end
 end)
 
--- [НОВОЕ] Таймер сессии
-task.spawn(function()
-    while true do
-        task.wait(1)
-        if _G.sessionTimerLabel then
-            local elapsed = math.floor(tick() - sessionStart)
-            local h = math.floor(elapsed / 3600)
-            local m = math.floor((elapsed % 3600) / 60)
-            local s = elapsed % 60
-            pcall(function()
-                _G.sessionTimerLabel:Set(string.format("Session: %02d:%02d:%02d | Kills: %d", h, m, s, killCount))
-            end)
-        end
-    end
-end)
-
 -- UI Creation
 local Window = WindUI:CreateWindow({
     Title = "Pistol Arena RAGE",
@@ -438,7 +399,6 @@ local Tabs = {
     Main = Window:Tab({ Title = "Main", Icon = "swords" }),
     Aimbot = Window:Tab({ Title = "Aimbot", Icon = "target" }),
     Misc = Window:Tab({ Title = "Misc", Icon = "settings" }),
-    Stats = Window:Tab({ Title = "Stats", Icon = "bar-chart-2" }),
 }
 
 Tabs.Main:Section({ Title = "Combat & Movement" })
@@ -514,20 +474,6 @@ Tabs.Aimbot:Slider({
     Callback = function(v) Settings.TriggerFOV = v SaveSettings() end
 })
 
--- [НОВОЕ] Show FOV Circle toggle
-Tabs.Aimbot:Toggle({
-    Title = "Show FOV Circle",
-    Value = Settings.ShowTriggerFOV,
-    Callback = function(v) Settings.ShowTriggerFOV = v SaveSettings() end
-})
-
--- [НОВОЕ] SpawnDelay слайдер
-Tabs.Aimbot:Slider({
-    Title = "Spawn Delay (sec)",
-    Value = { Min = 0, Max = 5, Default = Settings.SpawnDelay },
-    Callback = function(v) Settings.SpawnDelay = v SaveSettings() end
-})
-
 -- MISC TAB
 Tabs.Misc:Section({ Title = "System" })
 
@@ -546,32 +492,11 @@ Tabs.Misc:Button({
     Callback = function() SafeTeleport() end
 })
 
--- [НОВОЕ] Rejoin кнопка
-Tabs.Misc:Button({
-    Title = "Rejoin",
-    Desc = "Rejoin this place",
-    Callback = function() Rejoin() end
-})
-
 Tabs.Misc:Button({
     Title = "Save Config",
     Callback = function()
         SaveSettings()
         WindUI:Notify({ Title = "Saved", Content = "Config updated!", Duration = 3 })
-    end
-})
-
--- STATS TAB
-Tabs.Stats:Section({ Title = "Session Info" })
-
-_G.sessionTimerLabel = Tabs.Stats:Label({ Title = "Session: 00:00:00 | Kills: 0" })
-
-Tabs.Stats:Button({
-    Title = "Reset Stats",
-    Callback = function()
-        killCount = 0
-        sessionStart = tick()
-        WindUI:Notify({ Title = "Stats Reset", Content = "Kill count and timer reset.", Duration = 3 })
     end
 })
 
@@ -584,11 +509,6 @@ RunService.RenderStepped:Connect(function()
     local viewportSize = Camera.ViewportSize
     local center = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
 
-    -- [НОВОЕ] FOV Circle update
-    fovCircle.Position = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
-    fovCircle.Radius = Settings.TriggerFOV
-    fovCircle.Visible = Settings.ShowTriggerFOV and (Settings.Trigger or Settings.Aimbot)
-
     if char and char:FindFirstChild("HumanoidRootPart") then
         local root = char.HumanoidRootPart
         local hum = char:FindFirstChildOfClass("Humanoid")
@@ -597,21 +517,10 @@ RunService.RenderStepped:Connect(function()
             local currentTime = tick()
             if not currentTPTarget or not currentTPTarget.Parent or currentTPTarget.Humanoid.Health <= 0 then
                 local pTarget = GetClosestAny()
-                -- [НОВОЕ] Уведомление о смене цели
-                local newName = pTarget and pTarget.Name or ""
-                if newName ~= "" and newName ~= lastTargetName then
-                    lastTargetName = newName
-                    WindUI:Notify({ Title = "Target", Content = "→ " .. newName, Duration = 2 })
-                end
                 currentTPTarget = pTarget and pTarget.Character or nil
                 targetStartTime = currentTime 
             elseif (currentTime - targetStartTime) > 3 then
-                local pTarget = GetFarthestAny()
-                local newName = pTarget and pTarget.Name or ""
-                if newName ~= "" and newName ~= lastTargetName then
-                    lastTargetName = newName
-                    WindUI:Notify({ Title = "Target", Content = "→ " .. newName, Duration = 2 })
-                end
+                local pTarget = GetFarthestAny() 
                 currentTPTarget = pTarget and pTarget.Character or nil
                 targetStartTime = currentTime 
             end
@@ -643,8 +552,6 @@ RunService.RenderStepped:Connect(function()
                                 VirtualInputManager:SendMouseButtonEvent(viewportSize.X * 0.85, viewportSize.Y * 0.75, 0, false, game, 1)
                             end)
                             lastClick = tick()
-                            -- [НОВОЕ] Счётчик киллов
-                            killCount = killCount + 1
                         end
                     end
                 end
