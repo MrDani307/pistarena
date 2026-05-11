@@ -36,8 +36,16 @@ local Settings = {
     ShowTriggerFOV = false,
     AimPart = "Head",
     TeamCheck = false,
-    SpawnDelay = 1.2
+    SpawnDelay = 1.0 -- Установлено по умолчанию на 1
 }
+
+-- Создание визуального FOV
+local TriggerCircle = Drawing.new("Circle")
+TriggerCircle.Thickness = 1
+TriggerCircle.NumSides = 100
+TriggerCircle.Filled = false
+TriggerCircle.Color = Color3.fromRGB(255, 255, 255)
+TriggerCircle.Visible = false
 
 -- [ЛОГИКА SERVER HOP]
 local function TPReturner()
@@ -106,7 +114,8 @@ local function SaveSettings()
         Trigger = Settings.Trigger,
         TriggerFOV = Settings.TriggerFOV,
         ShowTriggerFOV = Settings.ShowTriggerFOV,
-        TeamCheck = Settings.TeamCheck
+        TeamCheck = Settings.TeamCheck,
+        SpawnDelay = Settings.SpawnDelay -- Сохранение задержки
     }
     pcall(function() writefile(FileName, HttpService:JSONEncode(data)) end)
 end
@@ -126,6 +135,7 @@ local function LoadSettings()
             Settings.TriggerFOV = data.TriggerFOV or 10
             Settings.ShowTriggerFOV = data.ShowTriggerFOV or false
             Settings.TeamCheck = data.TeamCheck or false
+            Settings.SpawnDelay = data.SpawnDelay or 1.0 -- Загрузка задержки
         end
     end
 end
@@ -470,8 +480,21 @@ Tabs.Aimbot:Toggle({
 
 Tabs.Aimbot:Slider({
     Title = "Trigger FOV Radius",
-    Value = { Min = 1, Max = 100, Default = Settings.TriggerFOV },
+    Value = { Min = 1, Max = 500, Default = Settings.TriggerFOV },
     Callback = function(v) Settings.TriggerFOV = v SaveSettings() end
+})
+
+Tabs.Aimbot:Toggle({
+    Title = "Show Trigger FOV",
+    Value = Settings.ShowTriggerFOV,
+    Callback = function(v) Settings.ShowTriggerFOV = v SaveSettings() end
+})
+
+Tabs.Aimbot:Slider({
+    Title = "Spawn Protection Delay",
+    Desc = "Wait X seconds before shooting fresh enemies",
+    Value = { Min = 0, Max = 5, Default = Settings.SpawnDelay },
+    Callback = function(v) Settings.SpawnDelay = v SaveSettings() end
 })
 
 -- MISC TAB
@@ -505,10 +528,15 @@ updateUIState()
 -- Main Runtime Loop
 local lastClick = 0
 RunService.RenderStepped:Connect(function()
-    local char = Player.Character
     local viewportSize = Camera.ViewportSize
     local center = Vector2.new(viewportSize.X / 2, viewportSize.Y / 2)
+    
+    -- Обновление визуального FOV
+    TriggerCircle.Position = center
+    TriggerCircle.Radius = Settings.TriggerFOV
+    TriggerCircle.Visible = Settings.ShowTriggerFOV and Settings.Trigger
 
+    local char = Player.Character
     if char and char:FindFirstChild("HumanoidRootPart") then
         local root = char.HumanoidRootPart
         local hum = char:FindFirstChildOfClass("Humanoid")
